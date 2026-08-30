@@ -1,0 +1,12 @@
+# nemo_gym core (editable) -- shared language_penalty module lives here.
+-e nemo-gym[dev] @ ../../
+# NVIDIA's upstream English IFEval verifiers -- used ONLY for the 9 English-only
+# letter/case instruction ids on `en` rows (the yue/zh-hk verifiers are vendored
+# under cantonese_rlvr/). The app guards this import: if it (or spacy below) fails
+# to install, the env still runs -- en rows just lose those 9 constraints.
+git+https://github.com/abukharin-nv/verifiable-instructions.git
+# spaCy English model: NVIDIA's word/sentence-count verifiers need it for `en`.
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+# NOTE: the Cantonese/Written-Chinese registry (cantonese_rlvr/) vendors its own
+# jieba + toml under cantonese_rlvr/_vendor/ (added to sys.path in its __init__),
+# and uses jsonschema/pyyaml already present in the container -- nothing to add.

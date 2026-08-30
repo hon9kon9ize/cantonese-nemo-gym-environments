@@ -1,0 +1,9 @@
+# nemo_gym core (editable) -- shared language_penalty module lives here.
+-e nemo-gym[dev] @ ../../
+# The 5-format verifier is VENDORED under cantonese_rlvr/ and depends only on:
+#   - jsonschema  (already in the container)
+#   - pyyaml      (already in the container)
+#   - toml        (vendored under cantonese_rlvr/_vendor/, on sys.path via __init__)
+#   - json/csv/xml.etree (stdlib)
+# So, unlike the base structured_outputs env, we need NEITHER openapi-schema-validator
+# NOR xmltodict -- nothing extra to install.

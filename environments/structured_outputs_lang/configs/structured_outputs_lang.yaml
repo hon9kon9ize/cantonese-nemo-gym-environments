@@ -1,0 +1,67 @@
+# structured_outputs_lang = the base `structured_outputs` env (emit JSON/YAML/XML/
+# TOML/CSV conforming to a given JSON Schema) forked with the multiplicative language
+# penalty + format gate (same design as code_gen_lang / instruction_following_lang /
+# math_with_judge_lang / stem_mcqa):
+#   reward = so_reward * language_multiplier * format_factor
+# so_reward = 1.0 iff the answer (text after </think>) parses in the target format AND
+# conforms to the schema. Reuses the vendored cantonese_rlvr.so_verify (5 formats:
+# json/yaml/toml full JSON-Schema validation, xml/csv required keys/columns) -- the
+# same reward the infinite-rl-nemo training env uses, and it covers the toml+csv the
+# base env can't. Rows carry no gold expected_data -> purely structural (schema_only).
+structured_outputs_lang:
+  resources_servers:
+    structured_outputs_lang:
+      entrypoint: app.py
+      language_penalty:
+        enabled: true
+        sc_list_path: data/SC_list.txt
+        # The deployed/training chat template pre-opens <think> in the generation
+        # prompt, so the model output starts with reasoning and ends with </think>
+        # + the final serialized document. true = reasoning is everything before
+        # </think>; the document after </think> never pollutes the language check.
+        reasoning_template: true
+        think_tag: think
+        # A schema-valid document produced with the wrong reasoning language keeps
+        # only floor*reward (0.1): a ~10x penalty that still preserves a correctness
+        # signal so a GRPO group never collapses to all-zero (no gradient).
+        wrong_lang_floor: 0.1
+        # RELAXED for code-mixing: reasoning counts as the target language as long as
+        # >= this share of alphabetic chars are in the target script (Han for zh/yue,
+        # Latin for en) -- not a strict majority. Lower it to tolerate more English.
+        min_target_script_ratio: 0.15
+        sc_strength: 1.0
+        sc_tolerance: 0.05
+        sc_full_ratio: 0.20
+        sc_floor: 0.0
+        sc_min_hits: 2
+        rollout_log_dir: rollouts
+      # Rollouts without a closed </think> keep only floor*reward, so GRPO
+      # reinforces tagged reasoning. Pair with overlong_filtering: false so
+      # truncated loopers reach the optimizer as negative advantage.
+      format_gate:
+        enabled: true
+        floor: 0.2
+        think_tag: think
+      domain: instruction_following
+      verified: false
+      description: Multilingual (yue/zh-hk/en) structured-output (JSON/YAML/XML/TOML/CSV) generation with language penalty
+      value: Improve schema-conformant structured output while enforcing reasoning language
+structured_outputs_lang_simple_agent:
+  responses_api_agents:
+    simple_agent:
+      entrypoint: app.py
+      resources_server:
+        type: resources_servers
+        name: structured_outputs_lang
+      model_server:
+        type: responses_api_models
+        name: policy_model
+      datasets:
+      - name: train
+        type: train
+        jsonl_fpath: resources_servers/structured_outputs_lang/data/train.jsonl
+        license: Apache 2.0
+      - name: validation
+        type: validation
+        jsonl_fpath: resources_servers/structured_outputs_lang/data/validation.jsonl
+        license: Apache 2.0

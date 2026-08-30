@@ -1,0 +1,68 @@
+# code_gen_lang = the base `code_gen` env (LiveCodeBench unit-test execution)
+# forked with the multiplicative language penalty + format gate (same design as
+# math_with_judge_lang / stem_mcqa). reward = code_reward * language_multiplier *
+# format_factor, enforcing the per-row target reasoning language (yue = colloquial
+# Cantonese, zh-hk = Written Traditional Chinese 書面語, en = English) and
+# forbidding Simplified Chinese. code_reward = 1.0 iff the extracted program
+# passes ALL unit tests (upstream LiveCodeBench runner, no sandbox).
+code_gen_lang:
+  resources_servers:
+    code_gen_lang:
+      entrypoint: app.py
+      # ---- upstream code_gen execution knobs ----
+      num_processes: 8
+      unit_test_timeout_secs: 10
+      debug: false
+      language_penalty:
+        enabled: true
+        sc_list_path: data/SC_list.txt
+        # The deployed/training chat template pre-opens <think> in the generation
+        # prompt, so the model output starts with reasoning and ends with </think>
+        # + the final ```python``` code block. true = reasoning is everything
+        # before </think>; the code block after </think> never pollutes it.
+        reasoning_template: true
+        think_tag: think
+        # Passing code in the wrong reasoning language keeps only floor*reward
+        # (0.1): a ~10x penalty that still preserves a correctness signal so a
+        # GRPO group never collapses to all-zero (no gradient).
+        wrong_lang_floor: 0.1
+        # RELAXED for code-mixing: reasoning counts as the target language as long as
+        # >= this share of alphabetic chars are in the target script (Han for zh/yue,
+        # Latin for en) -- not a strict majority. Lower it to tolerate more English.
+        min_target_script_ratio: 0.15
+        sc_strength: 1.0
+        sc_tolerance: 0.05
+        sc_full_ratio: 0.20
+        sc_floor: 0.0
+        sc_min_hits: 2
+        rollout_log_dir: rollouts
+      # Rollouts without a closed </think> keep only floor*reward, so GRPO
+      # reinforces tagged reasoning. Pair with overlong_filtering: false so
+      # truncated loopers reach the optimizer as negative advantage.
+      format_gate:
+        enabled: true
+        floor: 0.2
+        think_tag: think
+      domain: coding
+      verified: false
+      description: Multilingual competitive coding with language penalty
+      value: Improve competitive coding while enforcing reasoning language
+code_gen_lang_simple_agent:
+  responses_api_agents:
+    simple_agent:
+      entrypoint: app.py
+      resources_server:
+        type: resources_servers
+        name: code_gen_lang
+      model_server:
+        type: responses_api_models
+        name: policy_model
+      datasets:
+      - name: train
+        type: train
+        jsonl_fpath: resources_servers/code_gen_lang/data/train.jsonl
+        license: Apache 2.0
+      - name: validation
+        type: validation
+        jsonl_fpath: resources_servers/code_gen_lang/data/validation.jsonl
+        license: Apache 2.0

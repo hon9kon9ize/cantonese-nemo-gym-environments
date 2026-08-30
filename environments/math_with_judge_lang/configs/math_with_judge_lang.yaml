@@ -1,0 +1,82 @@
+# math_with_judge, forked with a multiplicative language penalty (ported from
+# infinite-rl-nemo). reward = math-verify reward * language_multiplier, where the
+# multiplier enforces the per-row target language (yue = colloquial Cantonese,
+# zh-hk = Written Traditional Chinese 書面語, en = English) and forbids Simplified
+# Chinese. No LLM judge (symbolic math-verify only).
+math_with_judge_lang:
+  resources_servers:
+    math_with_judge_lang:
+      entrypoint: app.py
+      # Judge is disabled; these fields only satisfy the schema (never called).
+      # name must be a concrete existing server (not ??? -> MissingMandatoryValue).
+      judge_model_server:
+        type: responses_api_models
+        name: policy_model
+      judge_responses_create_params: { input: [] }
+      should_use_judge: false
+      language_penalty:
+        enabled: true
+        # Curated simplified-only characters (absolute path; bind-mounted into .sif).
+        sc_list_path: data/SC_list.txt
+        # The checkpoint's chat_template.jinja is PATCHED to pre-open <think>\n in the
+        # generation prompt (thinking-on), matching the infinite-rl-nemo convention.
+        # So the model output starts with reasoning (no literal <think>) and ends with
+        # </think> + answer. true = reasoning is everything before </think>. (The
+        # format_gate below only checks for </think>, so it stays satisfiable.)
+        reasoning_template: true
+        think_tag: think
+        # Strong language penalty with a small FLOOR: correct math in the wrong
+        # language keeps only floor*reward (0.1). This is a ~10x penalty vs the old
+        # averaged lang aux, but the non-zero floor preserves a math-correctness
+        # signal so a GRPO group never collapses to all-zero (no gradient). The real
+        # CPT + post-trained 8B/30B already produce the target language (so they'd
+        # have variance regardless), but keeping a floor is the safer design.
+        wrong_lang_floor: 0.1
+        # RELAXED for code-mixing: reasoning counts as the target language as long as
+        # >= this share of alphabetic chars are in the target script (Han for zh/yue,
+        # Latin for en) -- not a strict majority. Lower it to tolerate more English.
+        min_target_script_ratio: 0.15
+        # Simplified-Chinese cleanliness (dead-zone absorbs curated-list false positives).
+        sc_strength: 1.0
+        sc_tolerance: 0.05
+        sc_full_ratio: 0.20
+        sc_floor: 0.0
+        sc_min_hits: 2
+        # Persist every rollout (prompt / full model output / reward breakdown) as
+        # JSONL here (one timestamped file per run) for offline analysis.
+        rollout_log_dir: rollouts
+      # Format gate (the piece the proven infinite-rl-nemo GSM8K runs had and this
+      # env lacked): rollouts without a closed </think> keep only floor*reward, so
+      # GRPO reinforces tagged reasoning instead of drifting to no-think. Non-zero
+      # floor keeps a math signal in all-unformatted groups. Pair with
+      # overlong_filtering: false so truncated loopers reach the optimizer as
+      # negative advantage instead of being hidden from it.
+      format_gate:
+        enabled: true
+        floor: 0.2
+        think_tag: think
+      domain: math
+      verified: false
+      description: Multilingual math (skywork) with math-verify + language penalty
+      value: Improve math capabilities while enforcing target reasoning language
+math_with_judge_lang_simple_agent:
+  responses_api_agents:
+    simple_agent:
+      entrypoint: app.py
+      resources_server:
+        type: resources_servers
+        name: math_with_judge_lang
+      model_server:
+        type: responses_api_models
+        name: policy_model
+      # NeMo-RL reads the actual training/val data from data.{train,validation}.data_path
+      # in the GRPO config; these entries are for ng_prepare_data / rollout collection.
+      datasets:
+      - name: train
+        type: train
+        jsonl_fpath: resources_servers/math_with_judge_lang/data/skywork_train.jsonl
+        license: Apache 2.0
+      - name: validation
+        type: validation
+        jsonl_fpath: resources_servers/math_with_judge_lang/data/skywork_validation.jsonl
+        license: Apache 2.0

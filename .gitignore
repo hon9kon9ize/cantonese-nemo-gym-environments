@@ -1,0 +1,16 @@
+.venv/
+**/.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+cache/
+rollouts/
+*.out
+# built data (regenerate with each env's prepare.py); keep the shipped examples
+environments/*/data/train*.jsonl
+environments/*/data/validation*.jsonl
+environments/*/data/*_metrics.json
+environments/*/data/*_rollouts.jsonl
+!environments/*/data/example.jsonl
+!environments/*/data/SC_list.txt
+.DS_Store

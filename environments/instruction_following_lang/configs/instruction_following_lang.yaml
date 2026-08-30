@@ -1,0 +1,71 @@
+# instruction_following_lang = the base `instruction_following` env (IFEval-style
+# verifiable-instruction checking) forked with the multiplicative language penalty
+# + format gate (same design as code_gen_lang / math_with_judge_lang / stem_mcqa):
+#   reward = if_reward * language_multiplier * format_factor
+# if_reward = fraction of the appended verifiable constraints the ANSWER satisfies.
+#
+# DUAL VERIFIER REGISTRY: yue / zh-hk rows -> the vendored Cantonese/Written-Chinese
+# `cantonese_rlvr.registry` (52 CJK-aware verifiers); en rows -> NVIDIA's upstream
+# `verifiable_instructions` (the 9 English-only letter/case types REG dropped). Each
+# routes by row `language` and falls back to the other registry.
+instruction_following_lang:
+  resources_servers:
+    instruction_following_lang:
+      entrypoint: app.py
+      # "fraction" = passed/checked constraints (denser GRPO signal on this hard,
+      # multi-constraint task; matches the infinite-rl nemo_reward reference).
+      # "binary" = 1.0 iff ALL constraints pass.
+      grading_mode: fraction
+      language_penalty:
+        enabled: true
+        sc_list_path: data/SC_list.txt
+        # The deployed/training chat template pre-opens <think> in the generation
+        # prompt, so the model output starts with reasoning and ends with </think>
+        # + the final answer. true = reasoning is everything before </think>; the
+        # answer after </think> never pollutes the language check.
+        reasoning_template: true
+        think_tag: think
+        # Answer in the wrong reasoning language keeps only floor*reward (0.1): a
+        # ~10x penalty that still preserves a correctness signal so a GRPO group
+        # never collapses to all-zero (no gradient).
+        wrong_lang_floor: 0.1
+        # RELAXED for code-mixing: reasoning counts as the target language as long as
+        # >= this share of alphabetic chars are in the target script (Han for zh/yue,
+        # Latin for en) -- not a strict majority. Lower it to tolerate more English.
+        min_target_script_ratio: 0.15
+        sc_strength: 1.0
+        sc_tolerance: 0.05
+        sc_full_ratio: 0.20
+        sc_floor: 0.0
+        sc_min_hits: 2
+        rollout_log_dir: rollouts
+      # Rollouts without a closed </think> keep only floor*reward, so GRPO
+      # reinforces tagged reasoning. Pair with overlong_filtering: false so
+      # truncated loopers reach the optimizer as negative advantage.
+      format_gate:
+        enabled: true
+        floor: 0.2
+        think_tag: think
+      domain: instruction_following
+      verified: false
+      description: Multilingual (yue/zh-hk/en) IFEval-style instruction following with language penalty
+      value: Improve verifiable instruction following while enforcing reasoning language
+instruction_following_lang_simple_agent:
+  responses_api_agents:
+    simple_agent:
+      entrypoint: app.py
+      resources_server:
+        type: resources_servers
+        name: instruction_following_lang
+      model_server:
+        type: responses_api_models
+        name: policy_model
+      datasets:
+      - name: train
+        type: train
+        jsonl_fpath: resources_servers/instruction_following_lang/data/train.jsonl
+        license: Apache 2.0
+      - name: validation
+        type: validation
+        jsonl_fpath: resources_servers/instruction_following_lang/data/validation.jsonl
+        license: Apache 2.0

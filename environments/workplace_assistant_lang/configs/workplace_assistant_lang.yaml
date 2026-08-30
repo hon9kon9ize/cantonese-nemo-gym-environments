@@ -1,0 +1,66 @@
+# workplace_assistant_lang = the base `workplace_assistant` env (multi-step tool
+# use; reward = did the model's tool calls reach the ground-truth end state) forked
+# with the multiplicative language penalty + format gate (same design as
+# math_with_judge_lang / stem_mcqa / code_gen_lang). reward = wb_reward *
+# language_multiplier * format_factor, enforcing the per-row target reasoning
+# language (yue = colloquial Cantonese, zh-hk = Written Traditional Chinese 書面語,
+# en = English) and forbidding Simplified Chinese. The tool suite + grader are
+# reused from the base env; this fork adds only the language/format layer.
+workplace_assistant_lang:
+  resources_servers:
+    workplace_assistant_lang:
+      entrypoint: app.py
+      language_penalty:
+        enabled: true
+        sc_list_path: data/SC_list.txt
+        # The chat template pre-opens <think> each assistant turn. The app grades
+        # the WHOLE trajectory (strips per-turn think tags and re-wraps), so it does
+        # NOT rely on the single-block reasoning_template extractor -- this flag is
+        # here for documentation/format semantics only.
+        reasoning_template: true
+        think_tag: think
+        # Correct tool use in the wrong reasoning language keeps only floor*reward
+        # (0.1): a ~10x penalty that still preserves a task signal so a GRPO group
+        # never collapses to all-zero (no gradient).
+        wrong_lang_floor: 0.1
+        # RELAXED for code-mixing: reasoning counts as the target language as long as
+        # >= this share of alphabetic chars are in the target script (Han for zh/yue,
+        # Latin for en) -- not a strict majority. Lower it to tolerate more English.
+        min_target_script_ratio: 0.15
+        sc_strength: 1.0
+        sc_tolerance: 0.05
+        sc_full_ratio: 0.20
+        sc_floor: 0.0
+        sc_min_hits: 2
+        rollout_log_dir: rollouts
+      # Trajectories that never close a </think> keep only floor*reward, so GRPO
+      # reinforces tagged reasoning. Pair with overlong_filtering: false so truncated
+      # loopers reach the optimizer as negative advantage.
+      format_gate:
+        enabled: true
+        floor: 0.2
+        think_tag: think
+      domain: agent
+      verified: false
+      description: Multilingual workplace-assistant multi-step tool use with language penalty
+      value: Improve multi-step tool use while enforcing reasoning language
+workplace_assistant_lang_simple_agent:
+  responses_api_agents:
+    simple_agent:
+      entrypoint: app.py
+      max_steps: 6
+      resources_server:
+        type: resources_servers
+        name: workplace_assistant_lang
+      model_server:
+        type: responses_api_models
+        name: policy_model
+      datasets:
+      - name: train
+        type: train
+        jsonl_fpath: resources_servers/workplace_assistant_lang/data/train.jsonl
+        license: Apache 2.0
+      - name: validation
+        type: validation
+        jsonl_fpath: resources_servers/workplace_assistant_lang/data/validation.jsonl
+        license: Apache 2.0
